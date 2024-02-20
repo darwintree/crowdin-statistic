@@ -1,0 +1,18 @@
+{
+  "scripts": {
+    "start": "yarn ts-node index.ts"
+  },
+  "dependencies": {
+    "@crowdin/crowdin-api-client": "^1.29.5",
+    "lodash": "^4.17.21",
+    "mongodb": "^6.3.0"
+  },
+  "devDependencies": {
+    "@types/lodash": "^4.14.202",
+    "@types/node": "^20.11.19",
+    "dotenv": "^16.4.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "license": "MIT"
+}
