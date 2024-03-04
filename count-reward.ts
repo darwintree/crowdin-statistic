@@ -8,9 +8,10 @@ function count_cjk(str: string) {
 
 
 function inProperDateRange(date: Date) {
-    const fromDate = new Date('2023-12-01T04:00:00+00:00')
-    const toDate = new Date('2024-02-10T04:00:00+00:00')
-    return date < toDate && date > fromDate
+    // const fromDate = new Date('2023-12-01T04:00:00+00:00')
+    const toDate = new Date('2024-03-01T04:00:00+00:00')
+    return date < toDate 
+    // && date > fromDate
 }
 
 interface Translation {
@@ -20,6 +21,7 @@ interface Translation {
     translationText: string;
     translator: string;
     createdAt: Date;
+    isFirstCreated: boolean;
 }
 
 interface Approval {
@@ -31,7 +33,6 @@ interface Approval {
 }
 
 
-
 const approvalList: Approval[] = []
 
 interface TranslationResult  {
@@ -41,18 +42,31 @@ interface TranslationResult  {
     approvedChineseCount: number;
 }
 
-
-
 const uri = "mongodb://localhost:27017";
 const client = new MongoClient(uri);
 const dbName = "crowdinConflux"
 const languageTranslation = "languageTranslation"
 const translationApproval = "translationApproval"
 
+async function getFirstTranslatedId(stringId: number) {
+    const translations = await client.db(dbName).collection(languageTranslation).find({stringId}).toArray()
+    if (translations.length < 1) {
+        throw new Error("no translation found")
+    }
+    let firstTranslatedId = translations[0].translationId
+    let firstTranslatedTs = new Date(translations[0].createdAt)
+    for (const translation of translations) {
+        if (new Date(translation.createdAt) < firstTranslatedTs) {
+            firstTranslatedId = translation.translationId
+        }
+    }
+    return firstTranslatedId as number
+}
+
 async function initTranslationMap(translationMap: {[key: string]: Translation }) {
     const languageTranslationCollcetion = client.db(dbName).collection(languageTranslation)
     const languageTranslations = (await languageTranslationCollcetion.find({}).toArray()) as unknown as StringTranslationsModel.PlainLanguageTranslation[]
-    languageTranslations.forEach((translation) => {
+    languageTranslations.forEach(async (translation) => {
         // translationId is already assigned
         if (translationMap[String(translation.translationId)] != undefined) {
             // only the one created ealier is preserved and do nothing
@@ -62,12 +76,19 @@ async function initTranslationMap(translationMap: {[key: string]: Translation })
                 console.log(`translation ${translation.translationId} created at ${translationMap[String(translation.translationId)].createdAt} is overwritten by ${new Date(translation.createdAt)}`)
             }
         }
+
+        const firstTranslatedId = await getFirstTranslatedId(translation.stringId)
+        if (firstTranslatedId != translation.translationId) {
+            console.log(`not first translated: ${translation.translationId}; original translation id: ${firstTranslatedId}`)
+        }
+
         translationMap[String(translation.translationId)] = {
             translationId: translation.translationId,
             stringId: translation.stringId,
             translationText: translation.text,
             createdAt: new Date(translation.createdAt),
             translator: translation.user.username,
+            isFirstCreated: translation.translationId == firstTranslatedId
         }
     })
 }
@@ -97,7 +118,7 @@ function countTranslationReward(translationMap: {[key: string]: Translation }, t
                 approvedChineseCount: 0,
             }
         }
-        if (inProperDateRange(translation.createdAt)) {
+        if (translation.isFirstCreated && inProperDateRange(translation.createdAt)) {
             translatedResultMap[translation.translator].translatedCount += 1
             translatedResultMap[translation.translator].translatedChineseCount += count_cjk(translation.translationText)
         }
@@ -153,6 +174,10 @@ async function main() {
 
     // print result
     console.log(translatedResultMap)
+    for (const translator of Object.keys(translatedResultMap)) {
+        const rewardInFC = translatedResultMap[translator].translatedChineseCount * 0.06 + translatedResultMap[translator].approvedChineseCount * 0.03
+        console.log(`${translator}: ${rewardInFC} FC`)
+    }
     console.log("finished")
 }
 
